@@ -1,40 +1,44 @@
-import { Analytics } from '@vercel/analytics/next'
-import type { Metadata, Viewport } from 'next'
-import { Fraunces, Inter } from 'next/font/google'
-import './globals.css'
+import { Analytics } from "@vercel/analytics/next";
+import type { Metadata, Viewport } from "next";
+import { Fraunces, Inter } from "next/font/google";
+import { StorefrontShell } from "@/components/storefront-shell";
+import "./globals.css";
 
 const inter = Inter({
-  subsets: ['latin'],
-  variable: '--font-sans',
-})
+  subsets: ["latin"],
+  variable: "--font-sans",
+});
 
 const fraunces = Fraunces({
-  subsets: ['latin'],
-  variable: '--font-serif',
-})
+  subsets: ["latin"],
+  variable: "--font-serif",
+});
 
 export const metadata: Metadata = {
-  title: 'Superleo',
-  description: 'Superleo — coming soon.',
-  generator: 'v0.app',
-}
+  title: "Superleo",
+  description: "Superleo — coming soon.",
+  generator: "v0.app",
+};
 
 export const viewport: Viewport = {
-  colorScheme: 'light',
-  themeColor: '#2f5d3a',
-}
+  colorScheme: "light",
+  themeColor: "#2f5d3a",
+};
 
 export default function RootLayout({
   children,
 }: Readonly<{
-  children: React.ReactNode
+  children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`light ${inter.variable} ${fraunces.variable} bg-background`}>
+    <html
+      lang="en"
+      className={`light ${inter.variable} ${fraunces.variable} bg-background`}
+    >
       <body className="font-sans antialiased">
-        {children}
-        {process.env.NODE_ENV === 'production' && <Analytics />}
+        <StorefrontShell>{children}</StorefrontShell>
+        {process.env.NODE_ENV === "production" && <Analytics />}
       </body>
     </html>
-  )
+  );
 }
