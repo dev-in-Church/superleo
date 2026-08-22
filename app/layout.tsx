@@ -17,7 +17,7 @@ const fraunces = Fraunces({
 export const metadata: Metadata = {
   title: "Superleo",
   description: "Superleo — coming soon.",
-  generator: "v0.app",
+  icons: "/icon.png",
 };
 
 export const viewport: Viewport = {
