@@ -1,17 +1,12 @@
 import { Analytics } from "@vercel/analytics/next";
 import type { Metadata, Viewport } from "next";
-import { Fraunces, Inter } from "next/font/google";
+import { Sora } from "next/font/google";
 import { StorefrontShell } from "@/components/storefront-shell";
 import "./globals.css";
 
-const inter = Inter({
+const sora = Sora({
   subsets: ["latin"],
   variable: "--font-sans",
-});
-
-const fraunces = Fraunces({
-  subsets: ["latin"],
-  variable: "--font-serif",
 });
 
 export const metadata: Metadata = {
@@ -31,10 +26,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="en"
-      className={`light ${inter.variable} ${fraunces.variable} bg-background`}
-    >
+    <html lang="en" className={`light ${sora.variable} bg-background`}>
       <body className="font-sans antialiased">
         <StorefrontShell>{children}</StorefrontShell>
         {process.env.NODE_ENV === "production" && <Analytics />}
