@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 const WHATSAPP_NUMBER = "254713616998";
 
 export function buildWhatsAppLink(product: BakeryProduct) {
-  const message = `Hi! I'd like to order:\n\n*${product.name}* - ${formatKES(product.price)}\n\nIs this available?`;
+  const message = `Hello! I'd like to order:\n\n*${product.name}* - ${formatKES(product.price)}\n\nIs this available?`;
   return `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
 }
 
