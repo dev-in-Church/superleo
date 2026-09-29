@@ -1,0 +1,200 @@
+import type {
+  BakeryProduct,
+  Business,
+  InventoryItem,
+  Order,
+  ProductionLog,
+} from "@/lib/types"
+
+export const businesses: Business[] = [
+  {
+    slug: "bakery",
+    name: "Superleo Bakery",
+    tagline: "Fresh from the oven, daily",
+    description:
+      "Doughnuts, sweet mandazi, bread, and celebration cakes. Order for pickup or delivery.",
+    status: "active",
+    accent: "oklch(0.38 0.075 152)",
+    href: "/bakery",
+  },
+  {
+    slug: "dairy",
+    name: "Superleo Dairy",
+    tagline: "Farm-fresh milk & more",
+    description:
+      "Milk, yoghurt, cheese, and butter sourced from local farms. Launching soon.",
+    status: "coming-soon",
+    accent: "oklch(0.5 0.06 220)",
+    href: "#",
+  },
+  {
+    slug: "butchery",
+    name: "Superleo Butchery",
+    tagline: "Quality cuts, every time",
+    description: "Fresh beef, goat, chicken, and specialty cuts on demand.",
+    status: "coming-soon",
+    accent: "oklch(0.5 0.11 25)",
+    href: "#",
+  },
+  {
+    slug: "grocer",
+    name: "Superleo Grocer",
+    tagline: "Everyday essentials",
+    description: "Fresh produce, pantry staples, and household goods.",
+    status: "coming-soon",
+    accent: "oklch(0.55 0.09 130)",
+    href: "#",
+  },
+  {
+    slug: "beverages",
+    name: "Superleo Beverages",
+    tagline: "Sip something good",
+    description: "Juices, sodas, water, and hot drinks delivered to your door.",
+    status: "coming-soon",
+    accent: "oklch(0.55 0.1 60)",
+    href: "#",
+  },
+]
+
+export const bakeryProducts: BakeryProduct[] = [
+  {
+    id: "prod_doughnut",
+    name: "Glazed Doughnut",
+    category: "doughnuts",
+    description: "Soft, fluffy doughnut with a classic sweet glaze.",
+    price: 50,
+    image: "/bakery/doughnuts.png",
+    available: true,
+  },
+  {
+    id: "prod_mandazi",
+    name: "Sweet Mandazi",
+    category: "mandazi",
+    description: "Golden, cardamom-spiced East African fried dough.",
+    price: 30,
+    image: "/bakery/mandazi.png",
+    available: true,
+  },
+  {
+    id: "prod_bread",
+    name: "Artisan Loaf",
+    category: "bread",
+    description: "Freshly baked golden sandwich loaf, sliced.",
+    price: 70,
+    image: "/bakery/bread.png",
+    available: true,
+  },
+  {
+    id: "prod_cake",
+    name: "Celebration Cake",
+    category: "cakes",
+    description: "Frosted vanilla sponge topped with fresh berries.",
+    price: 1800,
+    image: "/bakery/cakes.png",
+    available: true,
+  },
+  {
+    id: "prod_choc_doughnut",
+    name: "Chocolate Doughnut",
+    category: "doughnuts",
+    description: "Rich chocolate-dipped doughnut with sprinkles.",
+    price: 65,
+    image: "/bakery/doughnuts.png",
+    available: true,
+  },
+  {
+    id: "prod_brown_bread",
+    name: "Whole Wheat Loaf",
+    category: "bread",
+    description: "Wholesome brown bread, high in fiber.",
+    price: 85,
+    image: "/bakery/bread.png",
+    available: true,
+  },
+]
+
+export const inventoryItems: InventoryItem[] = [
+  { id: "inv_flour", name: "Wheat Flour", unit: "kg", stock: 120, minLevel: 50, costPerUnit: 65 },
+  { id: "inv_sugar", name: "Sugar", unit: "kg", stock: 40, minLevel: 45, costPerUnit: 130 },
+  { id: "inv_yeast", name: "Yeast", unit: "kg", stock: 8, minLevel: 5, costPerUnit: 400 },
+  { id: "inv_oil", name: "Cooking Oil", unit: "L", stock: 25, minLevel: 30, costPerUnit: 300 },
+  { id: "inv_eggs", name: "Eggs", unit: "tray", stock: 60, minLevel: 20, costPerUnit: 450 },
+  { id: "inv_butter", name: "Butter", unit: "kg", stock: 15, minLevel: 10, costPerUnit: 900 },
+]
+
+export const productionLogs: ProductionLog[] = [
+  { id: "plog_1", productId: "prod_doughnut", productName: "Glazed Doughnut", quantity: 240, date: "2026-08-20", staff: "Jane W." },
+  { id: "plog_2", productId: "prod_mandazi", productName: "Sweet Mandazi", quantity: 400, date: "2026-08-20", staff: "Jane W." },
+  { id: "plog_3", productId: "prod_bread", productName: "Artisan Loaf", quantity: 120, date: "2026-08-20", staff: "Peter K." },
+  { id: "plog_4", productId: "prod_cake", productName: "Celebration Cake", quantity: 12, date: "2026-08-20", staff: "Mary A." },
+]
+
+export const sampleOrders: Order[] = [
+  {
+    id: "ORD-1001",
+    customerName: "Achieng Otieno",
+    customerPhone: "254712345678",
+    fulfillment: "delivery",
+    address: "Kilimani, Nairobi",
+    scheduledDate: "2026-08-22",
+    scheduledTime: "10:00",
+    paymentMethod: "mpesa",
+    items: [
+      { productId: "prod_doughnut", name: "Glazed Doughnut", price: 50, quantity: 12 },
+      { productId: "prod_bread", name: "Artisan Loaf", price: 70, quantity: 2 },
+    ],
+    subtotal: 740,
+    discount: 0,
+    deliveryFee: 150,
+    total: 890,
+    status: "in_production",
+    paymentStatus: "success",
+    createdAt: "2026-08-21T08:30:00Z",
+  },
+  {
+    id: "ORD-1002",
+    customerName: "Brian Mwangi",
+    customerPhone: "254798765432",
+    fulfillment: "pickup",
+    scheduledDate: "2026-08-22",
+    scheduledTime: "14:30",
+    paymentMethod: "mpesa",
+    items: [{ productId: "prod_cake", name: "Celebration Cake", price: 1800, quantity: 1 }],
+    subtotal: 1800,
+    discount: 90,
+    deliveryFee: 0,
+    total: 1710,
+    status: "ready",
+    paymentStatus: "success",
+    createdAt: "2026-08-21T09:15:00Z",
+  },
+  {
+    id: "ORD-1003",
+    customerName: "Wanjiru Retail Ltd",
+    customerPhone: "254733111222",
+    fulfillment: "delivery",
+    address: "Westlands, Nairobi",
+    scheduledDate: "2026-08-22",
+    scheduledTime: "08:00",
+    paymentMethod: "mpesa",
+    items: [
+      { productId: "prod_mandazi", name: "Sweet Mandazi", price: 30, quantity: 200 },
+      { productId: "prod_doughnut", name: "Glazed Doughnut", price: 50, quantity: 100 },
+    ],
+    subtotal: 11000,
+    discount: 0,
+    deliveryFee: 150,
+    total: 11150,
+    status: "pending",
+    paymentStatus: "pending",
+    createdAt: "2026-08-21T07:45:00Z",
+  },
+]
+
+// Delivery stops with coordinates for route optimization demos (Nairobi area).
+export const deliveryStops = [
+  { orderId: "ORD-1001", customerName: "Achieng Otieno", address: "Kilimani, Nairobi", lat: -1.2921, lng: 36.7856 },
+  { orderId: "ORD-1003", customerName: "Wanjiru Retail Ltd", address: "Westlands, Nairobi", lat: -1.2649, lng: 36.8036 },
+  { orderId: "ORD-1004", customerName: "Otieno Stores", address: "Karen, Nairobi", lat: -1.3197, lng: 36.7069 },
+  { orderId: "ORD-1005", customerName: "Zawadi Cafe", address: "Langata, Nairobi", lat: -1.3419, lng: 36.7615 },
+]
