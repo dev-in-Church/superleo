@@ -5,8 +5,11 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "SuperLeo | Business Portal",
   description:
-    "Track your SuperLeo dairy milk deliveries and collection history.",
+    "Track your SuperLeo dairy milk deliveries and collection history. Shop Bakery Products",
   generator: "SuperLeo",
+  icons: {
+    icon: "/icon.png",
+  },
 };
 
 export const viewport: Viewport = {
