@@ -1,0 +1,35 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --background: oklch(0.975 0.008 140);
+  --foreground: oklch(0.26 0.055 160);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.26 0.055 160);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.26 0.055 160);
+  --primary: oklch(0.39 0.115 160);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.94 0.035 140);
+  --secondary-foreground: oklch(0.32 0.07 160);
+  --muted: oklch(0.94 0.02 140);
+  --muted-foreground: oklch(0.52 0.035 150);
+  --accent: oklch(0.92 0.07 125);
+  --accent-foreground: oklch(0.32 0.07 160);
+  --destructive: oklch(0.58 0.2 25);
+  --border: oklch(0.9 0.025 140);
+  --input: oklch(0.9 0.025 140);
+  --ring: oklch(0.55 0.11 155);
+  --radius: 0.8rem;
+}
+
+@theme inline {
+  --color-background: var(--background); --color-foreground: var(--foreground); --color-card: var(--card); --color-card-foreground: var(--card-foreground); --color-popover: var(--popover); --color-popover-foreground: var(--popover-foreground); --color-primary: var(--primary); --color-primary-foreground: var(--primary-foreground); --color-secondary: var(--secondary); --color-secondary-foreground: var(--secondary-foreground); --color-muted: var(--muted); --color-muted-foreground: var(--muted-foreground); --color-accent: var(--accent); --color-accent-foreground: var(--accent-foreground); --color-destructive: var(--destructive); --color-border: var(--border); --color-input: var(--input); --color-ring: var(--ring); --radius-sm: calc(var(--radius) * .6); --radius-md: calc(var(--radius) * .8); --radius-lg: var(--radius); --radius-xl: calc(var(--radius) * 1.4);
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--background); font-family: Arial, Helvetica, sans-serif; }
+button, select { font: inherit; }
