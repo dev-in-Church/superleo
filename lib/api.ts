@@ -45,7 +45,7 @@ export const supplierApi = {
       full_name: string;
       phone: string | null;
       address: string | null;
-    }>("/supplier/profile"),
+    }>("/suppliers/profile"),
   deliveries: () =>
     apiRequest<
       Array<{
@@ -53,5 +53,5 @@ export const supplierApi = {
         session_date: string;
         session_type: string;
       }>
-    >("/supplier/deliveries"),
+    >("/suppliers/deliveries"),
 };

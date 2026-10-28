@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { usePathname } from "next/navigation";
 import {
   ArrowRight,
@@ -27,6 +27,11 @@ import {
   UserPlus,
   ChevronDown,
   LayoutDashboard,
+  Mail,
+  MapPin,
+  Phone,
+  TrendingDown,
+  TrendingUp,
 } from "lucide-react";
 import useSWR from "swr";
 import { apiRequest, authApi, supplierApi } from "@/lib/api";
@@ -575,31 +580,690 @@ export function SupplierAuth({ mode }: { mode: "login" | "register" }) {
   );
 }
 
+// Replace the existing `SupplierDashboard` export in components/storefront.tsx with this
+// (the helpers above it go in the same file, outside the component).
+//
+// Imports needed in that file:
+//   import { useEffect, useMemo, useState } from "react";
+//   lucide-react: LogOut, Mail, MapPin, Phone, Sunrise, Sunset, TrendingDown, TrendingUp, User
+//
+// No chart library is needed: the chart is plain HTML/CSS.
+
+/* ---------- helpers ---------- */
+type Period = "7" | "10" | "month";
+const PERIODS: { id: Period; label: string }[] = [
+  { id: "7", label: "7 days" },
+  { id: "10", label: "10 days" },
+  { id: "month", label: "This month" },
+];
+
+// Local calendar day as "YYYY-MM-DD" (never shifted by time zones)
+function dateToKey(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function keyToDate(key: string) {
+  return new Date(`${key}T00:00:00`);
+}
+function normalizeDay(value: unknown): string | null {
+  const text = String(value ?? "");
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+  const d = new Date(text);
+  return Number.isNaN(d.getTime()) ? null : dateToKey(d);
+}
+function formatDay(key: string | null) {
+  return key
+    ? keyToDate(key).toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      })
+    : "Date unavailable";
+}
+const litres = (n: number) => `${Math.round(n * 10) / 10} L`;
+function niceTop(v: number) {
+  if (v <= 0) return 10;
+  const pow = 10 ** Math.floor(Math.log10(v));
+  const n = v / pow;
+  const step = [1, 2, 3, 4, 5, 6, 8, 10].find((c) => c >= n) ?? 10;
+  return step * pow;
+}
+
 export function SupplierDashboard() {
+  const [loggedOut, setLoggedOut] = useState(false);
+  // undefined = not checked yet, null = no token found, string = token
+  const [token, setToken] = useState<string | null | undefined>(undefined);
+  const [period, setPeriod] = useState<Period>("7");
+  const [activeKey, setActiveKey] = useState<string | null>(null);
+  const [showAll, setShowAll] = useState(false);
+
+  // Read the token after mount (window doesn't exist during server rendering).
+  useEffect(() => {
+    setToken(
+      sessionStorage.getItem("superleo_token") ||
+        localStorage.getItem("superleo_token"),
+    );
+  }, []);
+
+  const {
+    data: user,
+    error: userError,
+    isLoading: userLoading,
+  } = useSWR(token ? ["/auth/me", token] : null, () => authApi.me(), {
+    revalidateOnFocus: false,
+  });
+  const {
+    data: profile,
+    error: profileError,
+    isLoading: profileLoading,
+  } = useSWR(
+    token ? ["/supplier/profile", token] : null,
+    () => supplierApi.profile(),
+    { revalidateOnFocus: false },
+  );
+  const {
+    data: deliveries,
+    error: deliveriesError,
+    isLoading: deliveriesLoading,
+  } = useSWR(
+    token ? ["/supplier/deliveries", token] : null,
+    () => supplierApi.deliveries(),
+    { revalidateOnFocus: false },
+  );
+  const records = useMemo(() => deliveries || [], [deliveries]);
+  const dataError = userError || profileError || deliveriesError;
+  const isLoading = userLoading || profileLoading || deliveriesLoading;
+  const supplierProfile = profile || {
+    full_name: user?.full_name || "Supplier",
+    phone: null,
+    address: null,
+  };
+  const totalLitres = records.reduce(
+    (sum, delivery) => sum + Number(delivery.quantity_litres),
+    0,
+  );
+
+  // Newest first, regardless of the order the API returns
+  const sorted = useMemo(
+    () =>
+      [...records].sort((a, b) =>
+        (normalizeDay(b.session_date) || "").localeCompare(
+          normalizeDay(a.session_date) || "",
+        ),
+      ),
+    [records],
+  );
+  const recent = sorted[0];
+
+  // Everything the chart and period summary need
+  const view = useMemo(() => {
+    const end = new Date();
+    end.setHours(0, 0, 0, 0);
+    const start =
+      period === "month"
+        ? new Date(end.getFullYear(), end.getMonth(), 1)
+        : new Date(
+            end.getFullYear(),
+            end.getMonth(),
+            end.getDate() - (Number(period) - 1),
+          );
+    const keys: string[] = [];
+    for (const d = new Date(start); d <= end; d.setDate(d.getDate() + 1))
+      keys.push(dateToKey(d));
+
+    const byDay: Record<string, { morning: number; evening: number }> = {};
+    for (const r of records) {
+      const key = normalizeDay(r.session_date);
+      if (!key) continue;
+      const slot = (byDay[key] ||= { morning: 0, evening: 0 });
+      const qty = Number(r.quantity_litres) || 0;
+      if (String(r.session_type).toLowerCase() === "evening")
+        slot.evening += qty;
+      else slot.morning += qty;
+    }
+
+    const series = keys.map((key) => {
+      const s = byDay[key] || { morning: 0, evening: 0 };
+      return {
+        key,
+        morning: s.morning,
+        evening: s.evening,
+        total: s.morning + s.evening,
+      };
+    });
+    const keySet = new Set(keys);
+    const count = records.filter((r) =>
+      keySet.has(normalizeDay(r.session_date) || ""),
+    ).length;
+    const total = series.reduce((sum, s) => sum + s.total, 0);
+    const morning = series.reduce((sum, s) => sum + s.morning, 0);
+    const evening = series.reduce((sum, s) => sum + s.evening, 0);
+    const prevTotal = keys.reduce((sum, key) => {
+      const d = keyToDate(key);
+      d.setDate(d.getDate() - keys.length);
+      const s = byDay[dateToKey(d)];
+      return sum + (s ? s.morning + s.evening : 0);
+    }, 0);
+    const best = series.reduce(
+      (a, b) => (b.total > a.total ? b : a),
+      series[0],
+    );
+    const top = niceTop(Math.max(...series.map((s) => s.total), 0));
+    const change =
+      prevTotal > 0 ? ((total - prevTotal) / prevTotal) * 100 : null;
+    return {
+      series,
+      count,
+      total,
+      morning,
+      evening,
+      best,
+      top,
+      change,
+      days: keys.length,
+    };
+  }, [records, period]);
+
+  function choosePeriod(next: Period) {
+    setPeriod(next);
+    setActiveKey(null);
+  }
+  function logout() {
+    sessionStorage.removeItem("superleo_token");
+    localStorage.removeItem("superleo_token");
+    setLoggedOut(true);
+    window.location.href = "/dairy/login";
+  }
+
+  // Still checking for a token / loading data
+  if (token === undefined || isLoading)
+    return (
+      <>
+        <SiteHeader />
+        <main className="flex min-h-screen items-center justify-center bg-[#f5f7f3] px-6 pt-24 text-[#17372d]">
+          <div className="rounded-3xl border border-[#dce6dd] bg-white p-8 text-center shadow-sm">
+            <div className="mx-auto size-8 animate-spin rounded-full border-4 border-[#dceccd] border-t-[#0a6b48]" />
+            <p className="mt-4 font-semibold">Loading your supplier data…</p>
+          </div>
+        </main>
+      </>
+    );
+
+  if (!token || loggedOut || userError || (user && user.role !== "supplier"))
+    return (
+      <>
+        <SiteHeader />
+        <main className="flex min-h-screen items-center justify-center bg-[#f5f7f3] px-6 pt-24 text-[#17372d]">
+          <div className="rounded-3xl bg-white p-8 text-center shadow-sm">
+            <h1 className="text-2xl font-bold">Your session has ended</h1>
+            <p className="mt-2 text-sm text-[#71847a]">
+              Log in again to load your live supplier dashboard.
+            </p>
+            <Link
+              href="/dairy/login"
+              className="mt-5 inline-flex rounded-xl bg-[#0a6b48] px-5 py-3 font-bold text-white"
+            >
+              Log in again
+            </Link>
+          </div>
+        </main>
+      </>
+    );
+
+  if (dataError)
+    return (
+      <>
+        <SiteHeader />
+        <main className="flex min-h-screen items-center justify-center bg-[#f5f7f3] px-6 pt-24 text-[#17372d]">
+          <div className="max-w-md rounded-3xl border border-red-100 bg-white p-8 text-center shadow-sm">
+            <h1 className="text-2xl font-bold">
+              We could not load your dashboard
+            </h1>
+            <p className="mt-2 text-sm text-[#71847a]">
+              Your login is active, but the supplier profile or delivery records
+              could not be fetched.
+            </p>
+            <button
+              onClick={() => window.location.reload()}
+              className="mt-5 rounded-xl bg-[#0a6b48] px-5 py-3 font-bold text-white"
+            >
+              Try again
+            </button>
+          </div>
+        </main>
+      </>
+    );
+
+  const name = supplierProfile.full_name || user?.full_name || "Supplier";
+  const phone = (supplierProfile as { phone?: string | null }).phone;
+  const avgPerDelivery = records.length ? totalLitres / records.length : 0;
+  const listed = showAll ? sorted : sorted.slice(0, 6);
+  const activeDay = view.series.find((s) => s.key === activeKey);
+  const sessionTotal = view.morning + view.evening;
+  const morningPct = sessionTotal
+    ? Math.round((view.morning / sessionTotal) * 100)
+    : 0;
+
+  const labelFor = (key: string, i: number) => {
+    const d = keyToDate(key);
+    if (period === "7")
+      return d.toLocaleDateString("en-GB", { weekday: "short" });
+    if (period === "10") return String(d.getDate());
+    return i % 3 === 0 || i === view.series.length - 1
+      ? String(d.getDate())
+      : "";
+  };
+
+  const card = "rounded-2xl border border-[#dce6dd] bg-white p-5";
+  const eyebrow = "text-xs font-bold uppercase tracking-[.14em] text-[#5a9960]";
+
   return (
     <>
       <SiteHeader />
-      <main className="min-h-screen bg-[#f5f7f3] px-6 pb-20 pt-32 text-[#17372d] md:px-10">
+      <main className="min-h-screen overflow-x-clip bg-[#f5f7f3] px-4 pb-20 pt-28 text-[#17372d] sm:px-6 sm:pt-32 md:px-10">
         <div className="mx-auto max-w-5xl">
-          <p className="text-sm font-bold uppercase tracking-[.14em] text-[#5a9960]">
-            Supplier portal
-          </p>
-          <h1 className="mt-4 text-4xl font-bold">Your delivery overview</h1>
-          <p className="mt-2 text-[#71847a]">
-            Welcome back, Supplier. Here is your latest delivery activity.
-          </p>
-          <div className="mt-8 grid gap-4 md:grid-cols-3">
-            <div className="rounded-2xl bg-[#17372d] p-6 text-white">
-              <p className="text-sm text-[#b7cabd]">This month</p>
-              <strong className="mt-2 block text-4xl">486 L</strong>
+          {/* Heading */}
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className={eyebrow}>Supplier portal</p>
+              <h1 className="mt-3 text-2xl font-bold tracking-tight sm:text-3xl">
+                Your delivery overview
+              </h1>
+              <p className="mt-2 text-sm text-[#71847a] sm:text-base">
+                Welcome back, {name}. Here is your latest delivery activity.
+              </p>
             </div>
-            <div className="rounded-2xl border border-[#dce6dd] bg-white p-6">
-              <p className="text-sm text-[#809087]">Last delivery</p>
-              <strong className="mt-2 block text-4xl">30 L</strong>
+            <button
+              onClick={logout}
+              className="inline-flex items-center gap-2 rounded-xl border border-[#c8d8cb] bg-white px-4 py-2.5 text-sm font-bold transition hover:border-[#5a9960]"
+            >
+              <LogOut className="size-4" /> Log out
+            </button>
+          </div>
+
+          {/* All-time summary */}
+          <div className="mt-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+            <div className="rounded-2xl bg-[#17372d] p-5 text-white">
+              <p className="text-xs text-[#b7cabd] sm:text-sm">
+                Total supplied
+              </p>
+              <strong className="mt-2 block truncate text-2xl sm:text-3xl">
+                {litres(totalLitres)}
+              </strong>
+              <p className="mt-1 text-xs text-[#b7cabd]">All time</p>
             </div>
-            <div className="rounded-2xl border border-[#dce6dd] bg-white p-6">
-              <p className="text-sm text-[#809087]">Verified records</p>
-              <strong className="mt-2 block text-4xl">18/18</strong>
+            <div className={card}>
+              <p className="text-xs text-[#809087] sm:text-sm">Deliveries</p>
+              <strong className="mt-2 block text-2xl sm:text-3xl">
+                {records.length}
+              </strong>
+              <p className="mt-1 text-xs text-[#809087]">Recorded in total</p>
+            </div>
+            <div className={card}>
+              <p className="text-xs text-[#809087] sm:text-sm">
+                Latest delivery
+              </p>
+              <strong className="mt-2 block truncate text-2xl sm:text-3xl">
+                {recent ? litres(Number(recent.quantity_litres)) : "—"}
+              </strong>
+              <p className="mt-1 truncate text-xs text-[#809087]">
+                {recent
+                  ? formatDay(normalizeDay(recent.session_date))
+                  : "No records yet"}
+              </p>
+            </div>
+            <div className={card}>
+              <p className="text-xs text-[#809087] sm:text-sm">
+                Average delivery
+              </p>
+              <strong className="mt-2 block truncate text-2xl sm:text-3xl">
+                {records.length ? litres(avgPerDelivery) : "—"}
+              </strong>
+              <p className="mt-1 text-xs text-[#809087]">Per collection</p>
+            </div>
+          </div>
+
+          {/* Trend chart */}
+          <section
+            className={`${card} mt-4 sm:mt-5 sm:p-6`}
+            aria-label="Delivery trend"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className={eyebrow}>Delivery trend</p>
+                <h2 className="mt-1 text-lg font-bold sm:text-xl">
+                  Litres per day
+                </h2>
+              </div>
+              <div
+                role="group"
+                aria-label="Chart period"
+                className="inline-flex rounded-xl bg-[#eef5e8] p-1"
+              >
+                {PERIODS.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    aria-pressed={period === p.id}
+                    onClick={() => choosePeriod(p.id)}
+                    className={`rounded-lg px-3 py-1.5 text-xs font-bold transition sm:text-sm ${
+                      period === p.id
+                        ? "bg-white text-[#0a6b48] shadow-sm"
+                        : "text-[#64766b] hover:text-[#0a6b48]"
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Period summary */}
+            <dl className="mt-5 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
+              <div>
+                <dt className="text-xs text-[#809087]">Supplied</dt>
+                <dd className="mt-0.5 text-lg font-bold">
+                  {litres(view.total)}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-[#809087]">Deliveries</dt>
+                <dd className="mt-0.5 text-lg font-bold">{view.count}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-[#809087]">Daily average</dt>
+                <dd className="mt-0.5 text-lg font-bold">
+                  {litres(view.total / view.days)}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-[#809087]">vs previous period</dt>
+                <dd
+                  className={`mt-0.5 flex items-center gap-1 text-lg font-bold ${
+                    view.change === null
+                      ? "text-[#809087]"
+                      : view.change >= 0
+                        ? "text-[#0a6b48]"
+                        : "text-red-700"
+                  }`}
+                >
+                  {view.change === null ? (
+                    "—"
+                  ) : (
+                    <>
+                      {view.change >= 0 ? (
+                        <TrendingUp className="size-4" />
+                      ) : (
+                        <TrendingDown className="size-4" />
+                      )}
+                      {view.change >= 0 ? "+" : ""}
+                      {Math.round(view.change)}%
+                    </>
+                  )}
+                </dd>
+              </div>
+            </dl>
+
+            {/* Bars */}
+            <div className="mt-6 flex gap-2">
+              <div className="relative h-48 w-9 shrink-0 text-[10px] text-[#809087]">
+                {[view.top, view.top / 2, 0].map((t, i) => (
+                  <span
+                    key={i}
+                    className="absolute right-0 -translate-y-1/2"
+                    style={{ top: `${i * 50}%` }}
+                  >
+                    {Math.round(t * 10) / 10}
+                  </span>
+                ))}
+              </div>
+              <div className="relative h-48 min-w-0 flex-1">
+                <div aria-hidden className="absolute inset-0">
+                  <div className="absolute inset-x-0 top-0 border-t border-dashed border-[#e3ece2]" />
+                  <div className="absolute inset-x-0 top-1/2 border-t border-dashed border-[#e3ece2]" />
+                  <div className="absolute inset-x-0 bottom-0 border-t border-[#c8d8cb]" />
+                </div>
+                <div
+                  className={`absolute inset-0 flex items-end ${view.series.length > 12 ? "gap-px" : "gap-1.5"}`}
+                  onMouseLeave={() => setActiveKey(null)}
+                >
+                  {view.series.map((s) => {
+                    const mH = (s.morning / view.top) * 100;
+                    const eH = (s.evening / view.top) * 100;
+                    const active = activeKey === s.key;
+                    return (
+                      <button
+                        key={s.key}
+                        type="button"
+                        aria-pressed={active}
+                        aria-label={`${formatDay(s.key)}: ${litres(s.total)}`}
+                        title={`${formatDay(s.key)} · ${litres(s.total)}`}
+                        onClick={() => setActiveKey(active ? null : s.key)}
+                        onMouseEnter={() => setActiveKey(s.key)}
+                        className={`h-full min-w-0 flex-1 rounded-md transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#0a6b48] ${
+                          active ? "bg-[#eef5e8]" : "hover:bg-[#f4f8f1]"
+                        }`}
+                      >
+                        <span className="mx-auto flex h-full w-full max-w-[28px] flex-col justify-end px-px">
+                          <span
+                            className="block rounded-t-sm bg-[#c98a2b]"
+                            style={{ height: `${eH}%` }}
+                          />
+                          <span
+                            className={`block bg-[#0a6b48] ${eH === 0 ? "rounded-t-sm" : ""}`}
+                            style={{ height: `${mH}%` }}
+                          />
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+            <div
+              className={`ml-11 mt-2 flex ${view.series.length > 12 ? "gap-px" : "gap-1.5"}`}
+            >
+              {view.series.map((s, i) => (
+                <span
+                  key={s.key}
+                  className="min-w-0 flex-1 truncate text-center text-[10px] text-[#809087]"
+                >
+                  {labelFor(s.key, i)}
+                </span>
+              ))}
+            </div>
+
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#edf2ed] pt-4 text-xs">
+              <p className="min-w-0 text-[#4f6a5b]">
+                {activeDay ? (
+                  <>
+                    <strong>
+                      {keyToDate(activeDay.key).toLocaleDateString("en-GB", {
+                        weekday: "short",
+                        day: "2-digit",
+                        month: "short",
+                      })}
+                    </strong>{" "}
+                    · Morning {litres(activeDay.morning)} · Evening{" "}
+                    {litres(activeDay.evening)} · Total{" "}
+                    {litres(activeDay.total)}
+                  </>
+                ) : view.total > 0 ? (
+                  <>
+                    Best day:{" "}
+                    <strong>
+                      {keyToDate(view.best.key).toLocaleDateString("en-GB", {
+                        weekday: "short",
+                        day: "2-digit",
+                        month: "short",
+                      })}
+                    </strong>{" "}
+                    ({litres(view.best.total)}). Hover or tap a bar for details.
+                  </>
+                ) : (
+                  "No deliveries in this period."
+                )}
+              </p>
+              <div className="flex items-center gap-4 text-[#64766b]">
+                <span className="flex items-center gap-1.5">
+                  <span className="size-2.5 rounded-sm bg-[#0a6b48]" /> Morning
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="size-2.5 rounded-sm bg-[#c98a2b]" /> Evening
+                </span>
+              </div>
+            </div>
+          </section>
+
+          <div className="mt-4 grid gap-4 sm:mt-5 sm:gap-5 lg:grid-cols-[1.6fr_1fr]">
+            {/* Recent deliveries */}
+            <section className={`${card} min-w-0 sm:p-6`}>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className={eyebrow}>Records</p>
+                  <h2 className="mt-1 text-lg font-bold sm:text-xl">
+                    Recent deliveries
+                  </h2>
+                </div>
+                <span className="rounded-full bg-[#eef6eb] px-3 py-1 text-xs font-bold text-[#3e7c48]">
+                  {records.length}
+                </span>
+              </div>
+              <div className="mt-4 divide-y divide-[#edf2ed]">
+                {listed.length ? (
+                  listed.map((delivery, index) => {
+                    const evening =
+                      String(delivery.session_type).toLowerCase() === "evening";
+                    return (
+                      <div
+                        key={`${delivery.session_date}-${index}`}
+                        className="flex items-center justify-between gap-3 py-3.5"
+                      >
+                        <div className="flex min-w-0 items-center gap-3">
+                          <span
+                            className={`flex size-9 shrink-0 items-center justify-center rounded-xl ${
+                              evening
+                                ? "bg-[#f4eee2] text-[#9a7440]"
+                                : "bg-[#eef6eb] text-[#0a6b48]"
+                            }`}
+                          >
+                            {evening ? (
+                              <Sunset className="size-4" />
+                            ) : (
+                              <Sunrise className="size-4" />
+                            )}
+                          </span>
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-bold capitalize">
+                              {delivery.session_type} collection
+                            </p>
+                            <p className="text-xs text-[#71847a]">
+                              {formatDay(normalizeDay(delivery.session_date))}
+                            </p>
+                          </div>
+                        </div>
+                        <strong className="shrink-0 text-sm">
+                          {litres(Number(delivery.quantity_litres))}
+                        </strong>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <p className="py-8 text-center text-sm text-[#71847a]">
+                    No delivery records have been added yet.
+                  </p>
+                )}
+              </div>
+              {sorted.length > 6 && (
+                <button
+                  type="button"
+                  onClick={() => setShowAll((v) => !v)}
+                  className="mt-3 w-full rounded-xl border border-[#c8d8cb] py-2.5 text-sm font-bold text-[#0a6b48] transition hover:bg-[#f2f7f0]"
+                >
+                  {showAll
+                    ? "Show fewer"
+                    : `View all ${sorted.length} deliveries`}
+                </button>
+              )}
+            </section>
+
+            <div className="flex min-w-0 flex-col gap-4 sm:gap-5">
+              {/* Morning vs evening */}
+              <section className={card}>
+                <p className={eyebrow}>This period</p>
+                <h2 className="mt-1 text-lg font-bold">Morning vs evening</h2>
+                {sessionTotal > 0 ? (
+                  <>
+                    <div className="mt-4 flex h-3 overflow-hidden rounded-full bg-[#f4eee2]">
+                      <div
+                        className="bg-[#0a6b48]"
+                        style={{ width: `${morningPct}%` }}
+                      />
+                      <div className="flex-1 bg-[#c98a2b]" />
+                    </div>
+                    <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <dt className="flex items-center gap-1.5 text-xs text-[#809087]">
+                          <Sunrise className="size-3.5" /> Morning
+                        </dt>
+                        <dd className="mt-0.5 font-bold">
+                          {litres(view.morning)}{" "}
+                          <span className="text-xs font-semibold text-[#809087]">
+                            {morningPct}%
+                          </span>
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="flex items-center gap-1.5 text-xs text-[#809087]">
+                          <Sunset className="size-3.5" /> Evening
+                        </dt>
+                        <dd className="mt-0.5 font-bold">
+                          {litres(view.evening)}{" "}
+                          <span className="text-xs font-semibold text-[#809087]">
+                            {100 - morningPct}%
+                          </span>
+                        </dd>
+                      </div>
+                    </dl>
+                  </>
+                ) : (
+                  <p className="mt-3 text-sm text-[#71847a]">
+                    No deliveries in the selected period.
+                  </p>
+                )}
+              </section>
+
+              {/* Profile */}
+              <section className={card}>
+                <div className="flex items-center gap-3">
+                  <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-[#dceccd] text-base font-bold uppercase text-[#0a6b48]">
+                    {String(name).charAt(0)}
+                  </span>
+                  <div className="min-w-0">
+                    <h2 className="truncate text-lg font-bold">{name}</h2>
+                    <p className="flex items-center gap-1 text-xs text-[#71847a]">
+                      <User className="size-3.5" /> Supplier profile
+                    </p>
+                  </div>
+                </div>
+                <ul className="mt-4 flex flex-col gap-3 text-sm text-[#4f6a5b]">
+                  <li className="flex items-start gap-3">
+                    <Mail className="mt-0.5 size-4 shrink-0 text-[#0a6b48]" />
+                    <span className="min-w-0 break-words">
+                      {user?.email || "Email unavailable"}
+                    </span>
+                  </li>
+                  <li className="flex items-start gap-3">
+                    <Phone className="mt-0.5 size-4 shrink-0 text-[#0a6b48]" />
+                    <span>{phone || "Phone not added"}</span>
+                  </li>
+                  <li className="flex items-start gap-3">
+                    <MapPin className="mt-0.5 size-4 shrink-0 text-[#0a6b48]" />
+                    <span className="min-w-0 break-words">
+                      {supplierProfile.address || "Address not added"}
+                    </span>
+                  </li>
+                </ul>
+              </section>
             </div>
           </div>
         </div>
