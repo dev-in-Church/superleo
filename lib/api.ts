@@ -46,6 +46,15 @@ export const supplierApi = {
       phone: string | null;
       address: string | null;
     }>("/suppliers/profile"),
+  updateProfile: (payload: { fullName: string; phone: string; address: string }) =>
+    apiRequest<{
+      full_name: string;
+      phone: string | null;
+      address: string | null;
+    }>("/suppliers/profile", {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
   deliveries: () =>
     apiRequest<
       Array<{

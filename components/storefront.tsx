@@ -33,7 +33,7 @@ import {
   TrendingDown,
   TrendingUp,
 } from "lucide-react";
-import useSWR from "swr";
+import useSWR, { mutate as globalMutate } from "swr";
 import { apiRequest, authApi, supplierApi } from "@/lib/api";
 import HeroSlider from "./heroSlider";
 import { BusinessesSection } from "./businessSection";
@@ -461,6 +461,9 @@ export function BakeryPage() {
   );
 }
 
+// Replace the existing `SupplierAuth` export in components/storefront.tsx with this.
+// The only change: a required phone number field on the create-account form.
+
 export function SupplierAuth({ mode }: { mode: "login" | "register" }) {
   const isLogin = mode === "login";
   const [error, setError] = useState("");
@@ -515,15 +518,32 @@ export function SupplierAuth({ mode }: { mode: "login" | "register" }) {
           </p>
           <form onSubmit={submit} className="mt-8 flex flex-col gap-4">
             {!isLogin && (
-              <label className="text-sm font-semibold">
-                Full name
-                <input
-                  name="fullName"
-                  required
-                  className="mt-2 w-full rounded-xl border border-[#dce6dd] px-4 py-3 outline-none focus:border-[#5a9960]"
-                  placeholder="Amara Mutesi"
-                />
-              </label>
+              <>
+                <label className="text-sm font-semibold">
+                  Full name
+                  <input
+                    name="fullName"
+                    required
+                    autoComplete="name"
+                    className="mt-2 w-full rounded-xl border border-[#dce6dd] px-4 py-3 outline-none focus:border-[#5a9960]"
+                    placeholder="Amara Mutesi"
+                  />
+                </label>
+                <label className="text-sm font-semibold">
+                  Phone number
+                  <input
+                    name="phone"
+                    type="tel"
+                    inputMode="tel"
+                    autoComplete="tel"
+                    required
+                    pattern="\+?[0-9\s\-()]{9,20}"
+                    title="Enter a valid phone number, for example 0712 345 678"
+                    className="mt-2 w-full rounded-xl border border-[#dce6dd] px-4 py-3 outline-none focus:border-[#5a9960]"
+                    placeholder="0712 345 678"
+                  />
+                </label>
+              </>
             )}
             <label className="text-sm font-semibold">
               Email
@@ -580,11 +600,11 @@ export function SupplierAuth({ mode }: { mode: "login" | "register" }) {
   );
 }
 
-// Replace the existing `SupplierDashboard` export in components/storefront.tsx with this
 // (the helpers above it go in the same file, outside the component).
 //
 // Imports needed in that file:
 //   import { useEffect, useMemo, useState } from "react";
+//   import useSWR, { mutate as globalMutate } from "swr";
 //   lucide-react: LogOut, Mail, MapPin, Phone, Sunrise, Sunset, TrendingDown, TrendingUp, User
 //
 // No chart library is needed: the chart is plain HTML/CSS.
@@ -628,6 +648,14 @@ function niceTop(v: number) {
   return step * pow;
 }
 
+// 9-15 digits; spaces, dashes, brackets and a leading + are allowed
+function isValidPhone(value: string) {
+  const digits = value.replace(/\D/g, "");
+  return (
+    /^\+?[\d\s\-()]+$/.test(value) && digits.length >= 9 && digits.length <= 15
+  );
+}
+
 export function SupplierDashboard() {
   const [loggedOut, setLoggedOut] = useState(false);
   // undefined = not checked yet, null = no token found, string = token
@@ -635,6 +663,12 @@ export function SupplierDashboard() {
   const [period, setPeriod] = useState<Period>("7");
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
+  const [editingProfile, setEditingProfile] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [profileNotice, setProfileNotice] = useState<{
+    text: string;
+    error: boolean;
+  } | null>(null);
 
   // Read the token after mount (window doesn't exist during server rendering).
   useEffect(() => {
@@ -648,6 +682,7 @@ export function SupplierDashboard() {
     data: user,
     error: userError,
     isLoading: userLoading,
+    mutate: mutateUser,
   } = useSWR(token ? ["/auth/me", token] : null, () => authApi.me(), {
     revalidateOnFocus: false,
   });
@@ -655,6 +690,7 @@ export function SupplierDashboard() {
     data: profile,
     error: profileError,
     isLoading: profileLoading,
+    mutate: mutateProfile,
   } = useSWR(
     token ? ["/supplier/profile", token] : null,
     () => supplierApi.profile(),
@@ -766,6 +802,58 @@ export function SupplierDashboard() {
   function choosePeriod(next: Period) {
     setPeriod(next);
     setActiveKey(null);
+  }
+  async function saveProfile(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!token) return;
+    const form = new FormData(event.currentTarget);
+    const fullName = String(form.get("fullName") || "").trim();
+    const phoneValue = String(form.get("phone") || "").trim();
+    const addressValue = String(form.get("address") || "").trim();
+    if (fullName.length < 2) {
+      setProfileNotice({ text: "Enter your full name.", error: true });
+      return;
+    }
+    if (!phoneValue) {
+      setProfileNotice({ text: "Phone number is required.", error: true });
+      return;
+    }
+    if (!isValidPhone(phoneValue)) {
+      setProfileNotice({
+        text: "Enter a valid phone number, for example 0712 345 678.",
+        error: true,
+      });
+      return;
+    }
+    setSavingProfile(true);
+    try {
+      await supplierApi.updateProfile({
+        fullName,
+        phone: phoneValue,
+        address: addressValue,
+      });
+      // Refresh this page and the name shown in the site header
+      await Promise.all([
+        mutateProfile(),
+        mutateUser(),
+        globalMutate("/auth/me"),
+      ]);
+      setEditingProfile(false);
+      setProfileNotice({
+        text: "Your profile has been updated.",
+        error: false,
+      });
+    } catch (error) {
+      setProfileNotice({
+        text:
+          error instanceof Error
+            ? error.message
+            : "Could not save your profile",
+        error: true,
+      });
+    } finally {
+      setSavingProfile(false);
+    }
   }
   function logout() {
     sessionStorage.removeItem("superleo_token");
@@ -1234,35 +1322,125 @@ export function SupplierDashboard() {
 
               {/* Profile */}
               <section className={card}>
-                <div className="flex items-center gap-3">
-                  <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-[#dceccd] text-base font-bold uppercase text-[#0a6b48]">
-                    {String(name).charAt(0)}
-                  </span>
-                  <div className="min-w-0">
-                    <h2 className="truncate text-lg font-bold">{name}</h2>
-                    <p className="flex items-center gap-1 text-xs text-[#71847a]">
-                      <User className="size-3.5" /> Supplier profile
-                    </p>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-[#dceccd] text-base font-bold uppercase text-[#0a6b48]">
+                      {String(name).charAt(0)}
+                    </span>
+                    <div className="min-w-0">
+                      <h2 className="truncate text-lg font-bold">{name}</h2>
+                      <p className="flex items-center gap-1 text-xs text-[#71847a]">
+                        <User className="size-3.5" /> Supplier profile
+                      </p>
+                    </div>
                   </div>
+                  {!editingProfile && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setProfileNotice(null);
+                        setEditingProfile(true);
+                      }}
+                      className="shrink-0 rounded-lg border border-[#c8d8cb] px-3 py-1.5 text-sm font-bold text-[#0a6b48] transition hover:bg-[#f2f7f0]"
+                    >
+                      Edit
+                    </button>
+                  )}
                 </div>
-                <ul className="mt-4 flex flex-col gap-3 text-sm text-[#4f6a5b]">
-                  <li className="flex items-start gap-3">
-                    <Mail className="mt-0.5 size-4 shrink-0 text-[#0a6b48]" />
-                    <span className="min-w-0 break-words">
-                      {user?.email || "Email unavailable"}
-                    </span>
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <Phone className="mt-0.5 size-4 shrink-0 text-[#0a6b48]" />
-                    <span>{phone || "Phone not added"}</span>
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <MapPin className="mt-0.5 size-4 shrink-0 text-[#0a6b48]" />
-                    <span className="min-w-0 break-words">
-                      {supplierProfile.address || "Address not added"}
-                    </span>
-                  </li>
-                </ul>
+
+                {profileNotice && (
+                  <p
+                    role="status"
+                    className={`mt-4 rounded-xl border px-3 py-2.5 text-sm font-semibold ${
+                      profileNotice.error
+                        ? "border-red-200 bg-red-50 text-red-700"
+                        : "border-[#c8dfbd] bg-[#edf7e9] text-[#285b38]"
+                    }`}
+                  >
+                    {profileNotice.text}
+                  </p>
+                )}
+
+                {editingProfile ? (
+                  <form
+                    onSubmit={saveProfile}
+                    className="mt-4 flex flex-col gap-3"
+                  >
+                    <label className="text-xs font-bold text-[#4f6a5b]">
+                      Full name
+                      <input
+                        name="fullName"
+                        defaultValue={String(name)}
+                        required
+                        minLength={2}
+                        className="mt-1.5 w-full rounded-xl border border-[#dce6dd] bg-white px-3.5 py-2.5 text-sm font-normal text-[#17372d] outline-none transition focus:border-[#5a9960] focus:ring-2 focus:ring-[#5a9960]/20"
+                      />
+                    </label>
+                    <label className="text-xs font-bold text-[#4f6a5b]">
+                      Phone number
+                      <input
+                        name="phone"
+                        type="tel"
+                        inputMode="tel"
+                        required
+                        defaultValue={phone || ""}
+                        placeholder="e.g. 0712 345 678"
+                        className="mt-1.5 w-full rounded-xl border border-[#dce6dd] bg-white px-3.5 py-2.5 text-sm font-normal text-[#17372d] outline-none transition placeholder:text-[#9aa89f] focus:border-[#5a9960] focus:ring-2 focus:ring-[#5a9960]/20"
+                      />
+                    </label>
+                    <label className="text-xs font-bold text-[#4f6a5b]">
+                      Address
+                      <input
+                        name="address"
+                        defaultValue={supplierProfile.address || ""}
+                        placeholder="Village or town"
+                        className="mt-1.5 w-full rounded-xl border border-[#dce6dd] bg-white px-3.5 py-2.5 text-sm font-normal text-[#17372d] outline-none transition placeholder:text-[#9aa89f] focus:border-[#5a9960] focus:ring-2 focus:ring-[#5a9960]/20"
+                      />
+                    </label>
+                    <p className="text-xs text-[#809087]">
+                      Your email is your login, so it can&apos;t be changed
+                      here.
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        type="submit"
+                        disabled={savingProfile}
+                        className="flex-1 rounded-xl bg-[#0a6b48] py-2.5 text-sm font-bold text-white transition hover:bg-[#085a3d] disabled:opacity-60"
+                      >
+                        {savingProfile ? "Saving..." : "Save changes"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingProfile(false);
+                          setProfileNotice(null);
+                        }}
+                        className="flex-1 rounded-xl border border-[#c8d8cb] py-2.5 text-sm font-bold transition hover:border-[#5a9960]"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <ul className="mt-4 flex flex-col gap-3 text-sm text-[#4f6a5b]">
+                    <li className="flex items-start gap-3">
+                      <Mail className="mt-0.5 size-4 shrink-0 text-[#0a6b48]" />
+                      <span className="min-w-0 break-words">
+                        {user?.email || "Email unavailable"}
+                      </span>
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <Phone className="mt-0.5 size-4 shrink-0 text-[#0a6b48]" />
+                      <span>{phone || "Phone not added"}</span>
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <MapPin className="mt-0.5 size-4 shrink-0 text-[#0a6b48]" />
+                      <span className="min-w-0 break-words">
+                        {supplierProfile.address || "Address not added"}
+                      </span>
+                    </li>
+                  </ul>
+                )}
               </section>
             </div>
           </div>
