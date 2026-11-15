@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useEffect, useId, useRef, useState, useMemo } from "react";
 import { usePathname } from "next/navigation";
 import {
   ArrowRight,
@@ -32,6 +32,8 @@ import {
   Phone,
   TrendingDown,
   TrendingUp,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import useSWR, { mutate as globalMutate } from "swr";
 import { apiRequest, authApi, supplierApi } from "@/lib/api";
@@ -461,8 +463,59 @@ export function BakeryPage() {
   );
 }
 
-// Replace the existing `SupplierAuth` export in components/storefront.tsx with this.
-// The only change: a required phone number field on the create-account form.
+// Replace the existing `SupplierAuth` export in components/storefront.tsx with this
+// (it includes the small `PasswordField` helper, which goes in the same file).
+//
+// Imports needed in that file:
+//   import { useId, useState } from "react";
+//   lucide-react: Eye, EyeOff
+//
+// Changes: required phone number on the create-account form, and a show / hide
+// toggle on the password field.
+
+function PasswordField({
+  name = "password",
+  label = "Password",
+  placeholder = "At least 8 characters",
+  autoComplete,
+}: {
+  name?: string;
+  label?: string;
+  placeholder?: string;
+  autoComplete?: string;
+}) {
+  const id = useId();
+  const [visible, setVisible] = useState(false);
+  return (
+    <div>
+      <label htmlFor={id} className="text-sm font-semibold">
+        {label}
+      </label>
+      <div className="relative mt-2">
+        <input
+          id={id}
+          name={name}
+          required
+          minLength={8}
+          type={visible ? "text" : "password"}
+          autoComplete={autoComplete}
+          className="w-full rounded-xl border border-[#dce6dd] py-3 pl-4 pr-12 outline-none focus:border-[#5a9960]"
+          placeholder={placeholder}
+        />
+        <button
+          type="button"
+          onClick={() => setVisible((v) => !v)}
+          aria-label={visible ? "Hide password" : "Show password"}
+          aria-pressed={visible}
+          aria-controls={id}
+          className="absolute inset-y-0 right-0 flex w-12 items-center justify-center rounded-r-xl text-[#71847a] transition hover:text-[#0a6b48] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#0a6b48]"
+        >
+          {visible ? <EyeOff className="size-5" /> : <Eye className="size-5" />}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export function SupplierAuth({ mode }: { mode: "login" | "register" }) {
   const isLogin = mode === "login";
@@ -555,17 +608,9 @@ export function SupplierAuth({ mode }: { mode: "login" | "register" }) {
                 placeholder="you@example.com"
               />
             </label>
-            <label className="text-sm font-semibold">
-              Password
-              <input
-                name="password"
-                required
-                type="password"
-                minLength={8}
-                className="mt-2 w-full rounded-xl border border-[#dce6dd] px-4 py-3 outline-none focus:border-[#5a9960]"
-                placeholder="At least 8 characters"
-              />
-            </label>
+            <PasswordField
+              autoComplete={isLogin ? "current-password" : "new-password"}
+            />
             {error && (
               <p
                 role="alert"
