@@ -43,21 +43,21 @@ import { BusinessesSection } from "./businessSection";
 export const logoUrl =
   "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/superleo-Qcna9ovPl4HLITmsrTIfNSJelc9ykc.png";
 
-export function SiteHeader() {
-  const navLinks = [
-    { href: "/", label: "Home", match: (p: string) => p === "/" },
-    {
-      href: "/dairy",
-      label: "Dairy Management",
-      match: (p: string) => p.startsWith("/dairy"),
-    },
-    {
-      href: "/bakery",
-      label: "Bakery",
-      match: (p: string) => p.startsWith("/bakery"),
-    },
-  ];
+const navLinks = [
+  { href: "/", label: "Home", match: (p: string) => p === "/" },
+  {
+    href: "/dairy",
+    label: "Dairy Management",
+    match: (p: string) => p.startsWith("/dairy"),
+  },
+  {
+    href: "/bakery",
+    label: "Bakery",
+    match: (p: string) => p.startsWith("/bakery"),
+  },
+];
 
+export function SiteHeader() {
   const pathname = usePathname() ?? "/";
   const [open, setOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
@@ -171,6 +171,14 @@ export function SiteHeader() {
                       <LayoutDashboard className="size-4 text-[#0a6b48]" />
                       My dashboard
                     </Link>
+                    <Link
+                      href="/dairy/supplier/payments"
+                      role="menuitem"
+                      className="flex items-center gap-2 rounded-xl px-3 py-2 hover:bg-[#f2f7f0]"
+                    >
+                      <Wallet className="size-4 text-[#0a6b48]" />
+                      My payments
+                    </Link>
                     <button
                       onClick={logout}
                       role="menuitem"
@@ -247,6 +255,13 @@ export function SiteHeader() {
                     >
                       <LayoutDashboard className="size-4 text-[#0a6b48]" />
                       My dashboard
+                    </Link>
+                    <Link
+                      href="/dairy/supplier/payments"
+                      className="flex items-center gap-2 rounded-xl px-3 py-3 hover:bg-[#f2f7f0]"
+                    >
+                      <Wallet className="size-4 text-[#0a6b48]" />
+                      My payments
                     </Link>
                     <button
                       onClick={logout}
@@ -701,6 +716,9 @@ function isValidPhone(value: string) {
   );
 }
 
+const kshAmount = (n: number) =>
+  `KSh ${n.toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
 export function SupplierDashboard() {
   const [loggedOut, setLoggedOut] = useState(false);
   // undefined = not checked yet, null = no token found, string = token
@@ -708,6 +726,9 @@ export function SupplierDashboard() {
   const [period, setPeriod] = useState<Period>("7");
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
+  const [statementMonth, setStatementMonth] = useState("");
+  const [downloadingStatement, setDownloadingStatement] = useState(false);
+  const [statementError, setStatementError] = useState("");
   const [editingProfile, setEditingProfile] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileNotice, setProfileNotice] = useState<{
@@ -750,6 +771,11 @@ export function SupplierDashboard() {
     () => supplierApi.deliveries(),
     { revalidateOnFocus: false },
   );
+  const { data: paymentInfo } = useSWR(
+    token ? ["/suppliers/payments", token] : null,
+    () => supplierApi.payments(),
+    { revalidateOnFocus: false, shouldRetryOnError: false },
+  );
   const records = useMemo(() => deliveries || [], [deliveries]);
   const dataError = userError || profileError || deliveriesError;
   const isLoading = userLoading || profileLoading || deliveriesLoading;
@@ -774,6 +800,22 @@ export function SupplierDashboard() {
     [records],
   );
   const recent = sorted[0];
+
+  // Months that have deliveries, for the monthly PDF statement
+  const statementMonths = useMemo(() => {
+    const months = new Set<string>();
+    for (const r of records) {
+      const key = normalizeDay(r.session_date);
+      if (key) months.add(key.slice(0, 7));
+    }
+    return [...months].sort().reverse();
+  }, [records]);
+  const monthToDownload = statementMonth || statementMonths[0] || "";
+  const monthLabel = (month: string) =>
+    keyToDate(`${month}-01`).toLocaleDateString("en-GB", {
+      month: "long",
+      year: "numeric",
+    });
 
   // Everything the chart and period summary need
   const view = useMemo(() => {
@@ -898,6 +940,28 @@ export function SupplierDashboard() {
       });
     } finally {
       setSavingProfile(false);
+    }
+  }
+  async function downloadStatement() {
+    if (!monthToDownload) return;
+    setDownloadingStatement(true);
+    setStatementError("");
+    try {
+      const blob = await supplierApi.monthlyStatement(monthToDownload);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `superleo-statement-${monthToDownload}.pdf`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch (error) {
+      setStatementError(
+        error instanceof Error
+          ? error.message
+          : "Could not download the statement",
+      );
+    } finally {
+      setDownloadingStatement(false);
     }
   }
   function logout() {
@@ -1261,6 +1325,49 @@ export function SupplierDashboard() {
                   {records.length}
                 </span>
               </div>
+
+              {statementMonths.length > 0 && (
+                <div className="mt-4 flex flex-col gap-3 rounded-xl bg-[#f4f7f2] p-3.5 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold">Monthly statement (PDF)</p>
+                    <p className="text-xs text-[#71847a]">
+                      Your deliveries for a month, with their value.
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <select
+                      aria-label="Month"
+                      value={monthToDownload}
+                      onChange={(event) =>
+                        setStatementMonth(event.target.value)
+                      }
+                      className="min-w-0 flex-1 rounded-xl border border-[#dce6dd] bg-white px-3 py-2 text-sm outline-none focus:border-[#5a9960] sm:flex-none"
+                    >
+                      {statementMonths.map((month) => (
+                        <option key={month} value={month}>
+                          {monthLabel(month)}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={downloadStatement}
+                      disabled={downloadingStatement}
+                      className="shrink-0 rounded-xl bg-[#0a6b48] px-4 py-2 text-sm font-bold text-white transition hover:bg-[#085a3d] disabled:opacity-60"
+                    >
+                      {downloadingStatement ? "Preparing..." : "Download"}
+                    </button>
+                  </div>
+                </div>
+              )}
+              {statementError && (
+                <p
+                  role="alert"
+                  className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm font-semibold text-red-700"
+                >
+                  {statementError}
+                </p>
+              )}
               <div className="mt-4 divide-y divide-[#edf2ed]">
                 {listed.length ? (
                   listed.map((delivery, index) => {
@@ -1320,6 +1427,37 @@ export function SupplierDashboard() {
             </section>
 
             <div className="flex min-w-0 flex-col gap-4 sm:gap-5">
+              {/* Payments summary */}
+              {paymentInfo && (
+                <section className={card}>
+                  <p className={eyebrow}>Payments</p>
+                  <h2 className="mt-1 text-lg font-bold">
+                    {paymentInfo.balance.balance < 0
+                      ? "You owe SuperLeo"
+                      : "Balance due"}
+                  </h2>
+                  <strong
+                    className={`mt-2 block text-3xl ${
+                      paymentInfo.balance.balance < 0 ? "text-red-700" : ""
+                    }`}
+                  >
+                    {kshAmount(Math.abs(paymentInfo.balance.balance))}
+                  </strong>
+                  <p className="mt-1 text-xs text-[#71847a]">
+                    Paid so far: {kshAmount(paymentInfo.balance.paid)}
+                    {paymentInfo.balance.deducted > 0
+                      ? ` · Deductions: ${kshAmount(paymentInfo.balance.deducted)}`
+                      : ""}
+                  </p>
+                  <Link
+                    href="/dairy/supplier/payments"
+                    className="mt-4 block rounded-xl border border-[#c8d8cb] py-2.5 text-center text-sm font-bold text-[#0a6b48] transition hover:bg-[#f2f7f0]"
+                  >
+                    View payments
+                  </Link>
+                </section>
+              )}
+
               {/* Morning vs evening */}
               <section className={card}>
                 <p className={eyebrow}>This period</p>
@@ -1492,5 +1630,280 @@ export function SupplierDashboard() {
         </div>
       </main>
     </>
+  );
+}
+
+// Add this export to components/storefront.tsx (next to SupplierDashboard).
+// It uses SiteHeader, Link, useSWR, useEffect and useState, which that file already imports.
+// Then create app/dairy/supplier/payments/page.tsx (see the chat).
+
+const kshMoney = (n: number) =>
+  `KSh ${n.toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const paymentDateTime = (value: string) => {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? "—"
+    : date.toLocaleString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZone: "Africa/Nairobi",
+      });
+};
+const deductionDay = (value: string) => {
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? new Date(`${value}T00:00:00`)
+    : new Date(value);
+  return Number.isNaN(date.getTime())
+    ? value
+    : date.toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      });
+};
+const DEDUCTION_LABEL = {
+  feed: "Feed",
+  advance: "Advance",
+  other: "Other",
+} as const;
+
+export function SupplierPayments() {
+  // undefined = not checked yet, null = no token found, string = token
+  const [token, setToken] = useState<string | null | undefined>(undefined);
+  useEffect(() => {
+    setToken(
+      sessionStorage.getItem("superleo_token") ||
+        localStorage.getItem("superleo_token"),
+    );
+  }, []);
+
+  const { data, error, isLoading } = useSWR(
+    token ? ["/suppliers/payments", token] : null,
+    () => supplierApi.payments(),
+    { revalidateOnFocus: false },
+  );
+
+  const shell = (content: React.ReactNode) => (
+    <>
+      <SiteHeader />
+      <main className="min-h-screen overflow-x-clip bg-[#f5f7f3] px-4 pb-20 pt-28 text-[#17372d] sm:px-6 sm:pt-32 md:px-10">
+        {content}
+      </main>
+    </>
+  );
+
+  if (token === undefined || isLoading)
+    return shell(
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <div className="rounded-3xl border border-[#dce6dd] bg-white p-8 text-center shadow-sm">
+          <div className="mx-auto size-8 animate-spin rounded-full border-4 border-[#dceccd] border-t-[#0a6b48]" />
+          <p className="mt-4 font-semibold">Loading your payments…</p>
+        </div>
+      </div>,
+    );
+
+  if (!token)
+    return shell(
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <div className="rounded-3xl bg-white p-8 text-center shadow-sm">
+          <h1 className="text-2xl font-bold">Your session has ended</h1>
+          <p className="mt-2 text-sm text-[#71847a]">
+            Log in again to see your payments.
+          </p>
+          <Link
+            href="/dairy/login"
+            className="mt-5 inline-flex rounded-xl bg-[#0a6b48] px-5 py-3 font-bold text-white"
+          >
+            Log in again
+          </Link>
+        </div>
+      </div>,
+    );
+
+  if (error || !data)
+    return shell(
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <div className="max-w-md rounded-3xl border border-red-100 bg-white p-8 text-center shadow-sm">
+          <h1 className="text-2xl font-bold">
+            We could not load your payments
+          </h1>
+          <p className="mt-2 text-sm text-[#71847a]">
+            {error instanceof Error
+              ? error.message
+              : "Please try again in a moment."}
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-5 rounded-xl bg-[#0a6b48] px-5 py-3 font-bold text-white"
+          >
+            Try again
+          </button>
+        </div>
+      </div>,
+    );
+
+  const { balance, payments, deductions, startDate } = data;
+  const owes = balance.balance < 0;
+  const card = "rounded-2xl border border-[#dce6dd] bg-white p-5 sm:p-6";
+  const eyebrow = "text-xs font-bold uppercase tracking-[.14em] text-[#5a9960]";
+
+  return shell(
+    <div className="mx-auto max-w-5xl">
+      <Link
+        href="/dairy/supplier"
+        className="inline-flex items-center gap-1.5 text-sm font-bold text-[#0a6b48] hover:underline"
+      >
+        <span aria-hidden>←</span> Back to dashboard
+      </Link>
+
+      <p className={`${eyebrow} mt-4`}>Supplier portal</p>
+      <h1 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">
+        Your payments
+      </h1>
+      <p className="mt-2 max-w-2xl text-sm leading-6 text-[#71847a] sm:text-base">
+        What SuperLeo owes you for your milk, what has been paid to your M-Pesa,
+        and anything taken off before payment.
+      </p>
+
+      <dl className="mt-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        <div className="min-w-0 rounded-2xl border border-[#dce6dd] bg-white p-4 sm:p-5">
+          <dt className="text-xs text-[#809087]">Milk earned</dt>
+          <dd className="mt-1 truncate text-lg font-bold sm:text-xl">
+            {kshMoney(balance.earned)}
+          </dd>
+        </div>
+        <div className="min-w-0 rounded-2xl border border-[#dce6dd] bg-white p-4 sm:p-5">
+          <dt className="text-xs text-[#809087]">Deductions</dt>
+          <dd className="mt-1 truncate text-lg font-bold text-[#9a7440] sm:text-xl">
+            {balance.deducted > 0
+              ? `−${kshMoney(balance.deducted)}`
+              : kshMoney(0)}
+          </dd>
+        </div>
+        <div className="min-w-0 rounded-2xl border border-[#dce6dd] bg-white p-4 sm:p-5">
+          <dt className="text-xs text-[#809087]">Paid to you</dt>
+          <dd className="mt-1 truncate text-lg font-bold sm:text-xl">
+            {kshMoney(balance.paid)}
+          </dd>
+        </div>
+        <div
+          className={`min-w-0 rounded-2xl p-4 text-white sm:p-5 ${owes ? "bg-red-700" : "bg-[#17372d]"}`}
+        >
+          <dt className="text-xs text-[#b7cabd]">
+            {owes ? "You owe SuperLeo" : "Balance due"}
+          </dt>
+          <dd className="mt-1 truncate text-lg font-bold sm:text-xl">
+            {kshMoney(Math.abs(balance.balance))}
+          </dd>
+        </div>
+      </dl>
+      <p className="mt-2 text-xs text-[#809087]">
+        Counts milk delivered from{" "}
+        {startDate
+          ? deductionDay(startDate)
+          : "the start of the current payment period"}{" "}
+        onward.
+        {owes
+          ? " Your deductions are more than you have earned so far; the difference is taken off your next deliveries."
+          : ""}
+      </p>
+
+      {balance.processing > 0 && (
+        <p className="mt-4 rounded-2xl border border-[#ecd3a8] bg-[#fdf4e3] px-4 py-3 text-sm font-semibold text-[#8a5a12]">
+          {kshMoney(balance.processing)} is being sent to your M-Pesa right now.
+          It is already taken off your balance.
+        </p>
+      )}
+
+      <div className="mt-5 grid gap-4 sm:gap-5 lg:grid-cols-[1.3fr_1fr]">
+        {/* Payments */}
+        <section className={`${card} min-w-0`}>
+          <p className={eyebrow}>M-Pesa</p>
+          <h2 className="mt-1 text-lg font-bold sm:text-xl">Payment history</h2>
+          {payments.length ? (
+            <ul className="mt-4 divide-y divide-[#edf2ed]">
+              {payments.map((payment) => (
+                <li
+                  key={payment.id}
+                  className="flex items-start justify-between gap-3 py-3.5"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold">M-Pesa payment</p>
+                    <p className="text-xs text-[#71847a]">
+                      {paymentDateTime(payment.paid_at)} · to {payment.phone}
+                    </p>
+                    {payment.mpesa_receipt && (
+                      <p className="mt-0.5 font-mono text-xs text-[#5a9960]">
+                        {payment.mpesa_receipt}
+                      </p>
+                    )}
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <strong className="block text-sm">
+                      {kshMoney(payment.amount)}
+                    </strong>
+                    <span
+                      className={`mt-1 inline-block rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                        payment.status === "completed"
+                          ? "bg-[#eef6eb] text-[#3e7c48]"
+                          : "bg-[#fbe3b4] text-[#8a5a12]"
+                      }`}
+                    >
+                      {payment.status === "completed" ? "Paid" : "Processing"}
+                    </span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-4 rounded-xl bg-[#f4f7f2] px-4 py-8 text-center text-sm text-[#809087]">
+              No payments yet. They will appear here once SuperLeo pays you.
+            </p>
+          )}
+        </section>
+
+        {/* Deductions */}
+        <section className={`${card} min-w-0`}>
+          <p className={eyebrow}>Deductions</p>
+          <h2 className="mt-1 text-lg font-bold sm:text-xl">
+            Taken off before payment
+          </h2>
+          {deductions.length ? (
+            <ul className="mt-4 divide-y divide-[#edf2ed]">
+              {deductions.map((deduction) => (
+                <li
+                  key={deduction.id}
+                  className="flex items-start justify-between gap-3 py-3.5"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold">
+                      {DEDUCTION_LABEL[deduction.kind] ?? "Deduction"}
+                    </p>
+                    {deduction.description && (
+                      <p className="text-xs text-[#4f6a5b]">
+                        {deduction.description}
+                      </p>
+                    )}
+                    <p className="text-xs text-[#809087]">
+                      {deductionDay(deduction.deduction_date)}
+                    </p>
+                  </div>
+                  <strong className="shrink-0 text-sm text-[#9a7440]">
+                    −{kshMoney(deduction.amount)}
+                  </strong>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-4 rounded-xl bg-[#f4f7f2] px-4 py-8 text-center text-sm text-[#809087]">
+              Nothing has been deducted.
+            </p>
+          )}
+        </section>
+      </div>
+    </div>,
   );
 }

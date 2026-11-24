@@ -19,6 +19,54 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}) {
   return body.data as T;
 }
 
+// Same as apiRequest, but for files (PDF downloads)
+export async function apiBlob(path: string): Promise<Blob> {
+  const token =
+    typeof window !== "undefined"
+      ? sessionStorage.getItem("superleo_token")
+      : null;
+  const response = await fetch(`${API_URL}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    let message = "Download failed";
+    try {
+      message = (await response.json()).error || message;
+    } catch {
+      /* not JSON */
+    }
+    throw new Error(message);
+  }
+  return response.blob();
+}
+
+export type SupplierPayments = {
+  startDate: string | null;
+  balance: {
+    earned: number;
+    deducted: number;
+    paid: number;
+    processing: number;
+    balance: number;
+  };
+  payments: Array<{
+    id: string;
+    amount: number;
+    status: "completed" | "processing";
+    mpesa_receipt: string | null;
+    phone: string;
+    paid_at: string;
+  }>;
+  deductions: Array<{
+    id: string;
+    kind: "feed" | "advance" | "other";
+    description: string | null;
+    amount: number;
+    deduction_date: string;
+  }>;
+};
+
 export const authApi = {
   register: (payload: Record<string, string>) =>
     apiRequest("/auth/register", {
@@ -55,6 +103,10 @@ export const supplierApi = {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),
+  payments: () => apiRequest<SupplierPayments>("/suppliers/payments"),
+  // YYYY-MM  ->  PDF statement of that month's deliveries
+  monthlyStatement: (month: string) =>
+    apiBlob(`/suppliers/reports/monthly?month=${encodeURIComponent(month)}`),
   deliveries: () =>
     apiRequest<
       Array<{
